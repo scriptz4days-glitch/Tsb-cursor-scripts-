@@ -4,7 +4,7 @@
 ║                                                                              ║
 ║  Compatible: Delta Executor, Fluxus, Solara, Arceus X, and most others      ║
 ║  Author   : TSB Script Team                                                  ║
-║  Version  : 2.1  (Mobile Mode + responsive GUI)                             ║
+║  Version  : 2.2  (Native-style mobile controls, touch-fixed events)         ║
 ║                                                                              ║
 ║  FEATURES:                                                                   ║
 ║   ✦ Twisted Tech  (Instant / Humbled's variant)                             ║
@@ -20,7 +20,7 @@
 ║   ✦ Lock On — Closest to Cursor (F11)                                       ║
 ║   ✦ ESP SelectionBox + Billboard labels                                     ║
 ║   ✦ Draggable GUI — auto-scaled for mobile/tablet/desktop                  ║
-║   ✦ Mobile Mode — floating draggable on-screen tech buttons                 ║
+║   ✦ Mobile Mode — native-style circular tech buttons on left side           ║
 ║   ✦ Kyoto/Lethal burst keys: Q / E / R / G / T                             ║
 ║   ✦ Right-Ctrl toggles GUI visibility                                       ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
@@ -35,19 +35,12 @@
   F6   Loop Tech             F12  ESP
   RCtrl  Toggle GUI
 
-  COMBO BURST KEYS (active while their toggle is ON)
-  ───────────────────────────────────────────────────
-  Q    Kyoto One   (Flowing Water → back-dash cancel → re-engage)
-  E    Kyoto Two   (Flowing Water → side-dash cancel → Lethal)
-  R    Kyoto Grasp (Flowing Water → side-dash cancel → Hunter's Grasp)
-  G    Lethal + Flowing burst sequence
-  T    Uppercut Grasp
-
   MOBILE MODE
   ───────────────────────────────────────────────────
   Enable "Mobile Mode" in the 📱 section of the GUI.
-  A draggable button bar will appear showing a tap button for every
-  tech that is currently toggled ON. Buttons respect touch and mouse.
+  Large circular buttons (matching TSB's native controls style) appear
+  on the LEFT side of the screen — one per enabled tech.
+  Tap to execute. Visual pulse confirms each tap.
 ]]
 
 -- ═════════════════════════════════════════════════════════════════════════════
@@ -67,30 +60,29 @@ local LocalPlayer = Players.LocalPlayer
 local Mouse       = LocalPlayer:GetMouse()
 local Camera      = Workspace.CurrentCamera
 
--- ── Duplicate-load guard (executor-safe) ──────────────────────────────────────
+-- ── Duplicate-load guard ──────────────────────────────────────────────────────
 local _env = (typeof(getgenv) == "function" and getgenv()) or {}
 if _env._TSB_LOADED then
-    warn("[TSB] Script already loaded — run _env._TSB_LOADED = false to reload.")
+    warn("[TSB] Already loaded — set _env._TSB_LOADED = false to reload.")
     return
 end
 _env._TSB_LOADED = true
 
 -- ── Mobile / device detection ─────────────────────────────────────────────────
--- TouchEnabled is true on phones and tablets; we use it to auto-scale the GUI.
 local _IsMobile     = UserInputService.TouchEnabled
 local _ViewportSize = Camera.ViewportSize
 
--- Responsive dimension constants — all GUI pixel sizes reference these.
-local _GUI_W   = _IsMobile and 255 or 330   -- window width
-local _GUI_H   = _IsMobile and 410 or 500   -- window expanded height
-local _TITLE_H = _IsMobile and 32  or 38    -- title bar height
-local _ROW_H   = _IsMobile and 28  or 34    -- toggle row height
-local _SEC_H   = _IsMobile and 21  or 26    -- section header height
-local _FONT_S  = _IsMobile and 11  or 13    -- toggle label font size
-local _HEAD_S  = _IsMobile and 10  or 11    -- section header font size
-local _BTN_W   = _IsMobile and 40  or 48    -- pill button width
-local _BTN_H   = _IsMobile and 20  or 22    -- pill button height
-local _BTN_FS  = _IsMobile and 10  or 11    -- pill button font size
+-- Responsive dimension constants
+local _GUI_W   = _IsMobile and 255 or 330
+local _GUI_H   = _IsMobile and 410 or 500
+local _TITLE_H = _IsMobile and 32  or 38
+local _ROW_H   = _IsMobile and 28  or 34
+local _SEC_H   = _IsMobile and 21  or 26
+local _FONT_S  = _IsMobile and 11  or 13
+local _HEAD_S  = _IsMobile and 10  or 11
+local _BTN_W   = _IsMobile and 40  or 48
+local _BTN_H   = _IsMobile and 20  or 22
+local _BTN_FS  = _IsMobile and 10  or 11
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- SECTION 2 — CONFIGURATION
@@ -98,7 +90,6 @@ local _BTN_FS  = _IsMobile and 10  or 11    -- pill button font size
 
 local Config = {
 
-    -- Toggle states (all start OFF for safety)
     Toggles = {
         TwistedTech          = false,
         KyotoCombo           = false,
@@ -112,10 +103,9 @@ local Config = {
         LockOnClosest        = false,
         LockOnCursor         = false,
         ESP                  = false,
-        MobileMode           = false,  -- enables the floating on-screen button bar
+        MobileMode           = false,
     },
 
-    -- F-key keybinds for toggling each feature
     Keybinds = {
         TwistedTech          = Enum.KeyCode.F1,
         KyotoCombo           = Enum.KeyCode.F2,
@@ -130,7 +120,6 @@ local Config = {
         LockOnCursor         = Enum.KeyCode.F11,
         ESP                  = Enum.KeyCode.F12,
         ToggleGUI            = Enum.KeyCode.RightControl,
-        -- MobileMode has no keybind — use the GUI toggle
     },
 
     Settings = {
@@ -328,22 +317,25 @@ pcall(function()
     if old then old:Destroy() end
 end)
 
-local ScreenGui         = Instance.new("ScreenGui")
-ScreenGui.Name          = "TSB_GUI"
-ScreenGui.ResetOnSpawn  = false
-ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+-- IgnoreGuiInset = true so our coordinates match actual screen edges on mobile
+local ScreenGui               = Instance.new("ScreenGui")
+ScreenGui.Name                = "TSB_GUI"
+ScreenGui.ResetOnSpawn        = false
+ScreenGui.ZIndexBehavior      = Enum.ZIndexBehavior.Sibling
+pcall(function() ScreenGui.IgnoreGuiInset = true end)   -- removes top-bar offset
 pcall(function() ScreenGui.Parent = CoreGui end)
 if not ScreenGui.Parent then ScreenGui.Parent = LocalPlayer.PlayerGui end
 
 -- ── Main window ───────────────────────────────────────────────────────────────
-local MainFrame                = Instance.new("Frame")
-MainFrame.Name                 = "MainFrame"
-MainFrame.Size                 = UDim2.new(0, _GUI_W, 0, _GUI_H)
-MainFrame.Position             = UDim2.new(0, 12, 0.5, -math.floor(_GUI_H / 2))
-MainFrame.BackgroundColor3     = Color3.fromRGB(14, 14, 20)
-MainFrame.BorderSizePixel      = 0
-MainFrame.ClipsDescendants     = true
-MainFrame.Parent               = ScreenGui
+local MainFrame               = Instance.new("Frame")
+MainFrame.Name                = "MainFrame"
+MainFrame.Size                = UDim2.new(0, _GUI_W, 0, _GUI_H)
+MainFrame.Position            = UDim2.new(0, 12, 0.5, -math.floor(_GUI_H / 2))
+MainFrame.BackgroundColor3    = Color3.fromRGB(14, 14, 20)
+MainFrame.BorderSizePixel     = 0
+MainFrame.ClipsDescendants    = true
+MainFrame.ZIndex              = 5
+MainFrame.Parent              = ScreenGui
 
 do
     local c = Instance.new("UICorner")
@@ -361,17 +353,18 @@ do  -- drop shadow
     shadow.ImageTransparency     = 0.55
     shadow.ScaleType             = Enum.ScaleType.Slice
     shadow.SliceCenter           = Rect.new(23, 23, 277, 277)
-    shadow.ZIndex                = -1
+    shadow.ZIndex                = 4
     shadow.Parent                = MainFrame
 end
 
 -- ── Title bar ─────────────────────────────────────────────────────────────────
-local TitleBar             = Instance.new("Frame")
-TitleBar.Name              = "TitleBar"
-TitleBar.Size              = UDim2.new(1, 0, 0, _TITLE_H)
-TitleBar.BackgroundColor3  = Color3.fromRGB(26, 26, 40)
-TitleBar.BorderSizePixel   = 0
-TitleBar.Parent            = MainFrame
+local TitleBar                = Instance.new("Frame")
+TitleBar.Name                 = "TitleBar"
+TitleBar.Size                 = UDim2.new(1, 0, 0, _TITLE_H)
+TitleBar.BackgroundColor3     = Color3.fromRGB(26, 26, 40)
+TitleBar.BorderSizePixel      = 0
+TitleBar.ZIndex               = 6
+TitleBar.Parent               = MainFrame
 
 do
     local c = Instance.new("UICorner")
@@ -379,26 +372,29 @@ do
     c.Parent = TitleBar
 end
 
-local TitleLabel               = Instance.new("TextLabel")
-TitleLabel.Text                = "  ⚔  TSB ULTIMATE  v2.1"
-TitleLabel.Size                = UDim2.new(1, -50, 1, 0)
+local TitleLabel              = Instance.new("TextLabel")
+TitleLabel.Text               = "  ⚔  TSB ULTIMATE  v2.2"
+TitleLabel.Size               = UDim2.new(1, -50, 1, 0)
 TitleLabel.BackgroundTransparency = 1
-TitleLabel.TextColor3          = Color3.fromRGB(210, 210, 255)
-TitleLabel.TextSize            = _IsMobile and 12 or 14
-TitleLabel.Font                = Enum.Font.GothamBold
-TitleLabel.TextXAlignment      = Enum.TextXAlignment.Left
-TitleLabel.Parent              = TitleBar
+TitleLabel.TextColor3         = Color3.fromRGB(210, 210, 255)
+TitleLabel.TextSize           = _IsMobile and 12 or 14
+TitleLabel.Font               = Enum.Font.GothamBold
+TitleLabel.TextXAlignment     = Enum.TextXAlignment.Left
+TitleLabel.ZIndex             = 7
+TitleLabel.Parent             = TitleBar
 
-local MinBtn                   = Instance.new("TextButton")
-MinBtn.Text                    = "—"
-MinBtn.Size                    = UDim2.new(0, 28, 0, 20)
-MinBtn.Position                = UDim2.new(1, -34, 0.5, -10)
-MinBtn.BackgroundColor3        = Color3.fromRGB(55, 55, 85)
-MinBtn.TextColor3              = Color3.fromRGB(210, 210, 255)
-MinBtn.TextSize                = _IsMobile and 12 or 14
-MinBtn.Font                    = Enum.Font.GothamBold
-MinBtn.BorderSizePixel         = 0
-MinBtn.Parent                  = TitleBar
+local MinBtn                  = Instance.new("TextButton")
+MinBtn.Text                   = "—"
+MinBtn.Size                   = UDim2.new(0, 28, 0, 20)
+MinBtn.Position               = UDim2.new(1, -34, 0.5, -10)
+MinBtn.BackgroundColor3       = Color3.fromRGB(55, 55, 85)
+MinBtn.TextColor3             = Color3.fromRGB(210, 210, 255)
+MinBtn.TextSize               = _IsMobile and 12 or 14
+MinBtn.Font                   = Enum.Font.GothamBold
+MinBtn.BorderSizePixel        = 0
+MinBtn.ZIndex                 = 7
+MinBtn.AutoButtonColor        = false
+MinBtn.Parent                 = TitleBar
 
 do
     local c = Instance.new("UICorner")
@@ -407,16 +403,17 @@ do
 end
 
 -- ── Scrollable content area ───────────────────────────────────────────────────
-local Scroll                   = Instance.new("ScrollingFrame")
-Scroll.Name                    = "Scroll"
-Scroll.Size                    = UDim2.new(1, 0, 1, -_TITLE_H)
-Scroll.Position                = UDim2.new(0, 0, 0, _TITLE_H)
-Scroll.BackgroundTransparency  = 1
-Scroll.ScrollBarThickness      = _IsMobile and 2 or 3
-Scroll.ScrollBarImageColor3    = Color3.fromRGB(90, 90, 140)
-Scroll.CanvasSize              = UDim2.new(0, 0, 0, 0)
-Scroll.AutomaticCanvasSize     = Enum.AutomaticSize.Y
-Scroll.Parent                  = MainFrame
+local Scroll                  = Instance.new("ScrollingFrame")
+Scroll.Name                   = "Scroll"
+Scroll.Size                   = UDim2.new(1, 0, 1, -_TITLE_H)
+Scroll.Position               = UDim2.new(0, 0, 0, _TITLE_H)
+Scroll.BackgroundTransparency = 1
+Scroll.ScrollBarThickness     = _IsMobile and 2 or 3
+Scroll.ScrollBarImageColor3   = Color3.fromRGB(90, 90, 140)
+Scroll.CanvasSize             = UDim2.new(0, 0, 0, 0)
+Scroll.AutomaticCanvasSize    = Enum.AutomaticSize.Y
+Scroll.ZIndex                 = 6
+Scroll.Parent                 = MainFrame
 
 do
     local layout = Instance.new("UIListLayout")
@@ -432,43 +429,41 @@ do
     pad.Parent        = Scroll
 end
 
--- ── Draggable title bar — supports both mouse and touch ───────────────────────
+-- ── Drag: main window — mouse + touch ────────────────────────────────────────
 do
     local dragging, dragStart, frameStart
 
-    local function IsDragInput(inp)
-        return inp.UserInputType == Enum.UserInputType.MouseButton1
-            or inp.UserInputType == Enum.UserInputType.Touch
-    end
-    local function IsMovInput(inp)
-        return inp.UserInputType == Enum.UserInputType.MouseMovement
-            or inp.UserInputType == Enum.UserInputType.Touch
+    local function IsDragInput(i)
+        return i.UserInputType == Enum.UserInputType.MouseButton1
+            or i.UserInputType == Enum.UserInputType.Touch
     end
 
-    TitleBar.InputBegan:Connect(function(inp)
-        if IsDragInput(inp) then
+    TitleBar.InputBegan:Connect(function(i)
+        if IsDragInput(i) then
             dragging   = true
-            dragStart  = inp.Position
+            dragStart  = i.Position
             frameStart = MainFrame.Position
         end
     end)
-    TitleBar.InputEnded:Connect(function(inp)
-        if IsDragInput(inp) then dragging = false end
+    TitleBar.InputEnded:Connect(function(i)
+        if IsDragInput(i) then dragging = false end
     end)
-    UserInputService.InputChanged:Connect(function(inp)
-        if dragging and IsMovInput(inp) then
-            local delta = inp.Position - dragStart
-            MainFrame.Position = UDim2.new(
-                frameStart.X.Scale, frameStart.X.Offset + delta.X,
-                frameStart.Y.Scale, frameStart.Y.Offset + delta.Y
-            )
-        end
+    UserInputService.InputChanged:Connect(function(i)
+        if not dragging then return end
+        if i.UserInputType ~= Enum.UserInputType.MouseMovement
+        and i.UserInputType ~= Enum.UserInputType.Touch then return end
+        local delta = i.Position - dragStart
+        MainFrame.Position = UDim2.new(
+            frameStart.X.Scale, frameStart.X.Offset + delta.X,
+            frameStart.Y.Scale, frameStart.Y.Offset + delta.Y
+        )
     end)
 end
 
--- ── Minimize toggle ───────────────────────────────────────────────────────────
+-- ── Minimize ──────────────────────────────────────────────────────────────────
 local _guiExpanded = true
-MinBtn.MouseButton1Click:Connect(function()
+-- Activated works for both mouse click and touch tap (MouseButton1Click does NOT fire on touch)
+MinBtn.Activated:Connect(function()
     _guiExpanded = not _guiExpanded
     Scroll.Visible = _guiExpanded
     MainFrame.Size = _guiExpanded
@@ -479,16 +474,17 @@ end)
 
 -- ── GUI builder helpers ───────────────────────────────────────────────────────
 
--- Forward declaration: mobile bar refresh callback, set in Section 5.5
-local _mobileBarRefresh = nil  -- function(changedKey) — called after each toggle
+-- Forward declaration: set in Section 5.5 once the mobile panel exists
+local _mobileBarRefresh = nil
 
-local _toggleUpdaters = {}   -- [configKey] → function() to refresh visual
+local _toggleUpdaters = {}
 
 local function MakeSection(title)
     local f = Instance.new("Frame")
     f.Size             = UDim2.new(1, 0, 0, _SEC_H)
     f.BackgroundColor3 = Color3.fromRGB(36, 36, 58)
     f.BorderSizePixel  = 0
+    f.ZIndex           = 7
     f.Parent           = Scroll
 
     local c = Instance.new("UICorner")
@@ -503,6 +499,7 @@ local function MakeSection(title)
     lbl.TextSize          = _HEAD_S
     lbl.Font              = Enum.Font.GothamBold
     lbl.TextXAlignment    = Enum.TextXAlignment.Left
+    lbl.ZIndex            = 8
     lbl.Parent            = f
 end
 
@@ -511,6 +508,7 @@ local function MakeToggle(label, configKey, keyHint)
     row.Size             = UDim2.new(1, 0, 0, _ROW_H)
     row.BackgroundColor3 = Color3.fromRGB(22, 22, 32)
     row.BorderSizePixel  = 0
+    row.ZIndex           = 7
     row.Parent           = Scroll
 
     do
@@ -528,6 +526,7 @@ local function MakeToggle(label, configKey, keyHint)
     lbl.TextSize       = _FONT_S
     lbl.Font           = Enum.Font.Gotham
     lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.ZIndex         = 8
     lbl.Parent         = row
 
     if keyHint then
@@ -539,9 +538,11 @@ local function MakeToggle(label, configKey, keyHint)
         hint.TextColor3     = Color3.fromRGB(90, 90, 130)
         hint.TextSize       = _IsMobile and 9 or 10
         hint.Font           = Enum.Font.Gotham
+        hint.ZIndex         = 8
         hint.Parent         = row
     end
 
+    -- Use TextButton so Activated fires reliably on both mouse and touch
     local btn = Instance.new("TextButton")
     btn.Size             = UDim2.new(0, _BTN_W, 0, _BTN_H)
     btn.Position         = UDim2.new(1, -(_BTN_W + 6), 0.5, -math.floor(_BTN_H / 2))
@@ -551,6 +552,8 @@ local function MakeToggle(label, configKey, keyHint)
     btn.TextSize         = _BTN_FS
     btn.Font             = Enum.Font.GothamBold
     btn.BorderSizePixel  = 0
+    btn.AutoButtonColor  = false
+    btn.ZIndex           = 9
     btn.Parent           = row
 
     do
@@ -570,11 +573,11 @@ local function MakeToggle(label, configKey, keyHint)
             or  Color3.fromRGB(170, 170, 195)
     end
 
-    btn.MouseButton1Click:Connect(function()
+    -- Activated fires for mouse click AND touch tap — MouseButton1Click does NOT on mobile
+    btn.Activated:Connect(function()
         Config.Toggles[configKey] = not Config.Toggles[configKey]
         Refresh()
         Notify("TSB Script", label .. " → " .. (Config.Toggles[configKey] and "ON" or "OFF"))
-        -- Notify mobile bar so it can show/hide the corresponding button
         if _mobileBarRefresh then _mobileBarRefresh(configKey) end
     end)
 
@@ -612,6 +615,7 @@ local StatusRow = Instance.new("Frame")
 StatusRow.Size             = UDim2.new(1, 0, 0, _IsMobile and 22 or 26)
 StatusRow.BackgroundColor3 = Color3.fromRGB(26, 26, 40)
 StatusRow.BorderSizePixel  = 0
+StatusRow.ZIndex           = 7
 StatusRow.Parent           = Scroll
 
 do
@@ -628,258 +632,192 @@ StatusLabel.TextColor3     = Color3.fromRGB(90, 180, 110)
 StatusLabel.TextSize       = _IsMobile and 10 or 11
 StatusLabel.Font           = Enum.Font.Gotham
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+StatusLabel.ZIndex         = 8
 StatusLabel.Parent         = StatusRow
 
 -- ═════════════════════════════════════════════════════════════════════════════
--- SECTION 5.5 — MOBILE BAR (on-screen floating tech buttons)
+-- SECTION 5.5 — MOBILE TECH PANEL
 -- ═════════════════════════════════════════════════════════════════════════════
 --
--- When Mobile Mode is ON, a draggable button panel appears with one circular
--- button per tech that is currently toggled ON in the main GUI.
--- Tapping a button executes that tech's action once (burst / trigger).
+-- Large circular buttons styled to match TSB's native mobile controls.
+-- Positioned on the LEFT side of the screen (native controls own the right).
+-- Each button is only visible when:
+--   (a) Mobile Mode is ON, AND
+--   (b) The button's corresponding tech is toggled ON.
 --
--- Layout: 3-column grid, 64×64 buttons, 6 px gaps.
--- The bar is positioned at the bottom-center of the screen by default.
+-- Tap → immediate action. A scale-pulse tween confirms every tap.
+--
+-- Button size: 82×82 px (well above the 44pt minimum touch target).
 
--- Action table — populated AFTER tech functions are defined (Section 6).
--- Keys match Config.Toggles keys. Values are called with (target) on tap.
-local _mobileActions = {}   -- [configKey] = function(target)
+-- Button size constant
+local MBTN = 82
 
--- Visual metadata for each button
-local _mobileButtonDefs = {
-    { key = "TwistedTech",         label = "TW",   shortName = "Twisted",     color = Color3.fromRGB(230, 70,  70)  },
-    { key = "KyotoCombo",          label = "KY1",  shortName = "Kyoto 1",     color = Color3.fromRGB(90,  140, 255) },
-    { key = "KyotoCombo",          label = "KY2",  shortName = "Kyoto 2",     color = Color3.fromRGB(70,  110, 230) },
-    { key = "KyotoCombo",          label = "KYG",  shortName = "Kyoto Grsp",  color = Color3.fromRGB(50,  80,  200) },
-    { key = "GraspTech",           label = "GR",   shortName = "Grasp",       color = Color3.fromRGB(200, 140, 50)  },
-    { key = "UppercutGrasp",       label = "UC",   shortName = "Upcut Grsp",  color = Color3.fromRGB(210, 90,  190) },
-    { key = "LethalFlowing",       label = "L+F",  shortName = "Lethal+Flow", color = Color3.fromRGB(80,  200, 160) },
-    { key = "LoopTech",            label = "LP",   shortName = "Loop",        color = Color3.fromRGB(255, 165, 0)   },
-    { key = "AutoBlock",           label = "BK",   shortName = "Block",       color = Color3.fromRGB(60,  170, 220) },
-    { key = "AutoPunishFrontDash", label = "PF",   shortName = "Punish F",    color = Color3.fromRGB(180, 80,  110) },
-    { key = "AutoM1SideDash",      label = "SM",   shortName = "Side M1",     color = Color3.fromRGB(160, 100, 200) },
-    { key = "LockOnClosest",       label = "L1",   shortName = "Lock Cls",    color = Color3.fromRGB(100, 220, 80)  },
-    { key = "LockOnCursor",        label = "L2",   shortName = "Lock Cur",    color = Color3.fromRGB(140, 240, 100) },
+-- Action table — populated after tech functions are defined in Section 6.5.
+-- Keyed by the button's unique `id` string.
+local _mobileActions = {}
+
+-- Button definitions
+-- Each button that shares a toggle key (e.g. the three Kyoto variants) has
+-- a distinct `id` so they can be mapped to different actions.
+local _mobileBtnDefs = {
+    --  id        toggle key              icon    label (max ~9 chars)     accent color
+    { id="TW",   key="TwistedTech",       icon="⚡", label="Twisted",      clr=Color3.fromRGB(220, 60,  60)  },
+    { id="KY1",  key="KyotoCombo",        icon="水", label="Kyoto 1",      clr=Color3.fromRGB(70,  120, 240) },
+    { id="KY2",  key="KyotoCombo",        icon="流", label="Kyoto 2",      clr=Color3.fromRGB(50,  90,  210) },
+    { id="KYG",  key="KyotoCombo",        icon="握", label="Ky. Grasp",    clr=Color3.fromRGB(40,  70,  190) },
+    { id="GR",   key="GraspTech",         icon="✊", label="Grasp",        clr=Color3.fromRGB(190, 130, 40)  },
+    { id="UC",   key="UppercutGrasp",     icon="↑",  label="Upcut",        clr=Color3.fromRGB(190, 70,  180) },
+    { id="LF",   key="LethalFlowing",     icon="🌊", label="Lethal+Fl",    clr=Color3.fromRGB(50,  180, 150) },
+    { id="LP",   key="LoopTech",          icon="🔄", label="Loop",         clr=Color3.fromRGB(220, 140, 0)   },
+    { id="BK",   key="AutoBlock",         icon="🛡", label="Block",        clr=Color3.fromRGB(60,  170, 220) },
+    { id="PF",   key="AutoPunishFrontDash",icon="👊",label="Punish",       clr=Color3.fromRGB(170, 60,  90)  },
+    { id="SM",   key="AutoM1SideDash",    icon="↗",  label="Side M1",      clr=Color3.fromRGB(140, 80,  190) },
+    { id="L1",   key="LockOnClosest",     icon="🎯", label="Lock Cls",     clr=Color3.fromRGB(70,  190, 70)  },
+    { id="L2",   key="LockOnCursor",      icon="🖱", label="Lock Cur",     clr=Color3.fromRGB(100, 210, 80)  },
 }
 
--- The button objects, indexed by _mobileButtonDefs position
-local _mobileButtonObjs = {}   -- [defIndex] = TextButton
+-- Scrollable container on the left side so it doesn't conflict with the
+-- native right-side controls (block/punch/dash/jump buttons).
+local MobilePanel = Instance.new("ScrollingFrame")
+MobilePanel.Name                   = "TSB_MobilePanel"
+MobilePanel.Visible                = false
+MobilePanel.BackgroundTransparency = 1
+-- Occupy the left strip, starting below the top Roblox chrome (~80px)
+MobilePanel.Size                   = UDim2.new(0, MBTN + 16, 1, -140)
+MobilePanel.Position               = UDim2.new(0, 0, 0, 80)
+MobilePanel.AnchorPoint            = Vector2.new(0, 0)
+MobilePanel.ClipsDescendants       = true
+MobilePanel.ScrollBarThickness     = 0        -- invisible scrollbar
+MobilePanel.CanvasSize             = UDim2.new(0, 0, 0, 0)
+MobilePanel.AutomaticCanvasSize    = Enum.AutomaticSize.Y
+MobilePanel.ZIndex                 = 20
+MobilePanel.Parent                 = ScreenGui
 
-local MBTN_SIZE = 64   -- px per button (touch-friendly)
-local MBTN_GAP  = 6    -- px gap between buttons
-local MCOLS     = 3    -- buttons per row
+local MPLayout = Instance.new("UIListLayout")
+MPLayout.Padding              = UDim.new(0, 8)
+MPLayout.FillDirection        = Enum.FillDirection.Vertical
+MPLayout.HorizontalAlignment  = Enum.HorizontalAlignment.Center
+MPLayout.VerticalAlignment    = Enum.VerticalAlignment.Top
+MPLayout.SortOrder            = Enum.SortOrder.LayoutOrder
+MPLayout.Parent               = MobilePanel
 
--- ── Container frame ──────────────────────────────────────────────────────────
-local MobileBar = Instance.new("Frame")
-MobileBar.Name             = "TSB_MobileBar"
-MobileBar.Visible          = false
-MobileBar.BackgroundColor3 = Color3.fromRGB(16, 16, 24)
-MobileBar.BackgroundTransparency = 0.15
-MobileBar.BorderSizePixel  = 0
-MobileBar.Size             = UDim2.new(0, 10, 0, 10)   -- auto-resized later
-MobileBar.Position         = UDim2.new(0.5, -120, 1, -200)
-MobileBar.AnchorPoint      = Vector2.new(0, 0)
-MobileBar.Parent           = ScreenGui
-MobileBar.ZIndex           = 10
+local MPPad = Instance.new("UIPadding")
+MPPad.PaddingTop    = UDim.new(0, 6)
+MPPad.PaddingBottom = UDim.new(0, 6)
+MPPad.PaddingLeft   = UDim.new(0, 8)
+MPPad.PaddingRight  = UDim.new(0, 8)
+MPPad.Parent        = MobilePanel
 
-do
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, 12)
-    c.Parent = MobileBar
+-- ── Shared tap-pulse tween ────────────────────────────────────────────────────
+-- Shrinks the button briefly then springs back so the user feels their tap.
+local function PulseTap(btn)
+    local fullSize = UDim2.new(0, MBTN, 0, MBTN)
+    local shrink   = UDim2.new(0, MBTN * 0.82, 0, MBTN * 0.82)
+    local t1 = TweenService:Create(btn,
+        TweenInfo.new(0.07, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        { Size = shrink })
+    local t2 = TweenService:Create(btn,
+        TweenInfo.new(0.14, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        { Size = fullSize })
+    t1:Play()
+    t1.Completed:Connect(function() t2:Play() end)
 end
 
-do  -- faint border
-    local stroke = Instance.new("UIStroke")
-    stroke.Color       = Color3.fromRGB(70, 70, 110)
-    stroke.Thickness   = 1
-    stroke.Transparency = 0.5
-    stroke.Parent      = MobileBar
-end
+-- ── Build mobile buttons ──────────────────────────────────────────────────────
+local _mobileBtnObjs = {}   -- [i] = ImageButton
 
--- Drag title handle at top of mobile bar
-local MobileBarHandle = Instance.new("TextButton")
-MobileBarHandle.Size             = UDim2.new(1, 0, 0, 22)
-MobileBarHandle.BackgroundColor3 = Color3.fromRGB(28, 28, 46)
-MobileBarHandle.Text             = "  ⚔ TSB Controls  ··· drag"
-MobileBarHandle.TextColor3       = Color3.fromRGB(160, 160, 200)
-MobileBarHandle.TextSize         = 10
-MobileBarHandle.Font             = Enum.Font.GothamBold
-MobileBarHandle.TextXAlignment   = Enum.TextXAlignment.Left
-MobileBarHandle.BorderSizePixel  = 0
-MobileBarHandle.ZIndex           = 11
-MobileBarHandle.Parent           = MobileBar
+for i, def in ipairs(_mobileBtnDefs) do
 
-do
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, 12)
-    c.Parent = MobileBarHandle
-end
+    -- Use ImageButton: Activated fires reliably on touch AND mouse
+    local btn = Instance.new("ImageButton")
+    btn.Name                  = "TSBMBtn_" .. def.id
+    btn.Size                  = UDim2.new(0, MBTN, 0, MBTN)
+    btn.BackgroundColor3      = def.clr
+    btn.BackgroundTransparency = 0.28
+    btn.Image                 = ""
+    btn.BorderSizePixel       = 0
+    btn.LayoutOrder           = i
+    btn.ZIndex                = 21
+    btn.Visible               = false   -- shown by RefreshMobileBar
+    btn.AutoButtonColor       = false   -- disable default darkening; we do pulse instead
+    btn.Parent                = MobilePanel
 
--- Grid frame that holds the actual tech buttons
-local MobileGrid = Instance.new("Frame")
-MobileGrid.Name                 = "Grid"
-MobileGrid.BackgroundTransparency = 1
-MobileGrid.Size                 = UDim2.new(1, 0, 1, -22)
-MobileGrid.Position             = UDim2.new(0, 0, 0, 22)
-MobileGrid.ZIndex               = 11
-MobileGrid.Parent               = MobileBar
-
-local MobileGridLayout = Instance.new("UIGridLayout")
-MobileGridLayout.CellSize        = UDim2.new(0, MBTN_SIZE, 0, MBTN_SIZE)
-MobileGridLayout.CellPaddingH    = UDim.new(0, MBTN_GAP)    -- Roblox 2026+ property name
-MobileGridLayout.CellPaddingV    = UDim.new(0, MBTN_GAP)
--- Fallback if those properties don't exist in older API:
-pcall(function()
-    MobileGridLayout.CellPaddingH = UDim.new(0, MBTN_GAP)
-    MobileGridLayout.CellPaddingV = UDim.new(0, MBTN_GAP)
-end)
-MobileGridLayout.FillDirection   = Enum.FillDirection.Horizontal
-MobileGridLayout.HorizontalAlignment = Enum.HorizontalAlignment.Left
-MobileGridLayout.VerticalAlignment   = Enum.VerticalAlignment.Top
-MobileGridLayout.SortOrder       = Enum.SortOrder.LayoutOrder
-MobileGridLayout.Parent          = MobileGrid
-
-local MobileGridPad = Instance.new("UIPadding")
-MobileGridPad.PaddingLeft   = UDim.new(0, 6)
-MobileGridPad.PaddingRight  = UDim.new(0, 6)
-MobileGridPad.PaddingTop    = UDim.new(0, 6)
-MobileGridPad.PaddingBottom = UDim.new(0, 6)
-MobileGridPad.Parent        = MobileGrid
-
--- ── Draggable mobile bar (mouse + touch) ─────────────────────────────────────
-do
-    local drag, dStart, bStart
-
-    local function IsDragInp(i)
-        return i.UserInputType == Enum.UserInputType.MouseButton1
-            or i.UserInputType == Enum.UserInputType.Touch
-    end
-
-    MobileBarHandle.InputBegan:Connect(function(i)
-        if IsDragInp(i) then
-            drag   = true
-            dStart = i.Position
-            bStart = MobileBar.Position
-        end
-    end)
-    MobileBarHandle.InputEnded:Connect(function(i)
-        if IsDragInp(i) then drag = false end
-    end)
-    UserInputService.InputChanged:Connect(function(i)
-        if drag and (i.UserInputType == Enum.UserInputType.MouseMovement
-            or i.UserInputType == Enum.UserInputType.Touch) then
-            local delta = i.Position - dStart
-            MobileBar.Position = UDim2.new(
-                bStart.X.Scale, bStart.X.Offset + delta.X,
-                bStart.Y.Scale, bStart.Y.Offset + delta.Y
-            )
-        end
-    end)
-end
-
--- ── Create all mobile buttons (hidden by default) ─────────────────────────────
-local function _MakeMobileButton(def, index)
-    local btn = Instance.new("TextButton")
-    btn.Name             = "MBtn_" .. def.label
-    btn.Size             = UDim2.new(0, MBTN_SIZE, 0, MBTN_SIZE)
-    btn.BackgroundColor3 = def.color
-    btn.BackgroundTransparency = 0.1
-    btn.Text             = ""
-    btn.BorderSizePixel  = 0
-    btn.LayoutOrder      = index
-    btn.ZIndex           = 12
-    btn.Visible          = false   -- shown only when tech is ON + Mobile Mode is ON
-    btn.Parent           = MobileGrid
-
+    -- Perfect circle
     do
         local c = Instance.new("UICorner")
-        c.CornerRadius = UDim.new(0, 12)
+        c.CornerRadius = UDim.new(1, 0)
         c.Parent = btn
     end
 
-    -- Short label (e.g. "TW")
-    local shortLbl = Instance.new("TextLabel")
-    shortLbl.Text                 = def.label
-    shortLbl.Size                 = UDim2.new(1, 0, 0.55, 0)
-    shortLbl.Position             = UDim2.new(0, 0, 0.08, 0)
-    shortLbl.BackgroundTransparency = 1
-    shortLbl.TextColor3           = Color3.fromRGB(255, 255, 255)
-    shortLbl.TextSize             = 18
-    shortLbl.Font                 = Enum.Font.GothamBold
-    shortLbl.ZIndex               = 13
-    shortLbl.Parent               = btn
+    -- Subtle white ring — matches TSB native button style
+    do
+        local s = Instance.new("UIStroke")
+        s.Color        = Color3.fromRGB(255, 255, 255)
+        s.Thickness    = 1.8
+        s.Transparency = 0.55
+        s.Parent       = btn
+    end
 
-    -- Full name sub-label (e.g. "Twisted")
+    -- Large centered icon (emoji / Unicode symbol)
+    local iconLbl = Instance.new("TextLabel")
+    iconLbl.Text                 = def.icon
+    iconLbl.Size                 = UDim2.new(1, 0, 0.54, 0)
+    iconLbl.Position             = UDim2.new(0, 0, 0.06, 0)
+    iconLbl.BackgroundTransparency = 1
+    iconLbl.TextColor3           = Color3.fromRGB(255, 255, 255)
+    iconLbl.TextSize             = 28
+    iconLbl.Font                 = Enum.Font.GothamBold
+    iconLbl.TextStrokeTransparency = 0.25
+    iconLbl.ZIndex               = 22
+    iconLbl.Parent               = btn
+
+    -- Short name below the icon
     local nameLbl = Instance.new("TextLabel")
-    nameLbl.Text                  = def.shortName
-    nameLbl.Size                  = UDim2.new(1, -4, 0.32, 0)
-    nameLbl.Position              = UDim2.new(0, 2, 0.64, 0)
+    nameLbl.Text                 = def.label
+    nameLbl.Size                 = UDim2.new(1, -8, 0.32, 0)
+    nameLbl.Position             = UDim2.new(0, 4, 0.64, 0)
     nameLbl.BackgroundTransparency = 1
-    nameLbl.TextColor3            = Color3.fromRGB(240, 240, 255)
-    nameLbl.TextSize              = 9
-    nameLbl.Font                  = Enum.Font.Gotham
-    nameLbl.TextScaled            = true
-    nameLbl.ZIndex                = 13
-    nameLbl.Parent                = btn
+    nameLbl.TextColor3           = Color3.fromRGB(245, 245, 255)
+    nameLbl.TextSize             = 11
+    nameLbl.Font                 = Enum.Font.Gotham
+    nameLbl.TextScaled           = true
+    nameLbl.TextStrokeTransparency = 0.4
+    nameLbl.ZIndex               = 22
+    nameLbl.Parent               = btn
 
-    -- Tap / click: fire the action from _mobileActions
-    btn.MouseButton1Click:Connect(function()
-        -- Map the button back to its unique action key
-        -- Kyoto buttons share the "KyotoCombo" toggle key but have different actions
-        local actionKey = def.label   -- unique per button (e.g. "KY1", "KY2", "KYG")
-        local fn = _mobileActions[actionKey]
+    -- Activated — the ONLY reliable cross-platform tap/click event
+    btn.Activated:Connect(function()
+        PulseTap(btn)
+        local fn = _mobileActions[def.id]
         if fn then
             local target = State.LockTarget or GetClosestEnemy()
-            pcall(fn, target)
+            task.spawn(function() pcall(fn, target) end)
         end
     end)
 
-    return btn
+    _mobileBtnObjs[i] = btn
 end
 
--- Build all buttons
-for i, def in ipairs(_mobileButtonDefs) do
-    _mobileButtonObjs[i] = _MakeMobileButton(def, i)
-end
-
--- ── Resize MobileBar to fit exactly its visible buttons ──────────────────────
-local function _ResizeMobileBar()
-    local visCount = 0
-    for _, btn in ipairs(_mobileButtonObjs) do
-        if btn.Visible then visCount = visCount + 1 end
-    end
-    if visCount == 0 then
-        MobileBar.Visible = false
-        return
-    end
-    MobileBar.Visible = Config.Toggles.MobileMode
-
-    local rows = math.ceil(visCount / MCOLS)
-    local cols = math.min(visCount, MCOLS)
-    local pad  = 6
-    local w = cols * MBTN_SIZE + (cols - 1) * MBTN_GAP + pad * 2
-    local h = rows * MBTN_SIZE + (rows - 1) * MBTN_GAP + pad * 2 + 22   -- +22 for handle
-    MobileBar.Size = UDim2.new(0, w, 0, h)
-end
-
--- ── Master refresh: update button visibility + resize bar ─────────────────────
--- Called when any toggle changes (changedKey = the Config.Toggles key that changed).
-local function RefreshMobileBar(changedKey)
+-- ── Refresh: show/hide buttons based on current toggle states ─────────────────
+local function RefreshMobileBar(_changedKey)
     if not Config.Toggles.MobileMode then
-        MobileBar.Visible = false
+        MobilePanel.Visible = false
         return
     end
 
-    for i, def in ipairs(_mobileButtonDefs) do
-        _mobileButtonObjs[i].Visible = Config.Toggles[def.key]
+    local anyVisible = false
+    for i, def in ipairs(_mobileBtnDefs) do
+        local show = Config.Toggles[def.key] == true
+        _mobileBtnObjs[i].Visible = show
+        if show then anyVisible = true end
     end
-    _ResizeMobileBar()
+    MobilePanel.Visible = anyVisible
 end
 
--- Expose as the forward-declared callback so MakeToggle can call it
+-- Wire refresh callback so MakeToggle can call it
 _mobileBarRefresh = RefreshMobileBar
 
--- Special case: when MobileMode itself is toggled, refresh everything
+-- Override MobileMode's updater so toggling it triggers a full refresh
 local _origMobileModeUpdater = _toggleUpdaters["MobileMode"]
 _toggleUpdaters["MobileMode"] = function()
     if _origMobileModeUpdater then _origMobileModeUpdater() end
@@ -1054,7 +992,7 @@ local function PerformUppercutGrasp(target)
     end)
 end
 
--- ── Lethal + Flowing Integration ──────────────────────────────────────────────
+-- ── Lethal + Flowing ──────────────────────────────────────────────────────────
 local _lethalFlowCD = false
 
 local function PerformLethalFlowing()
@@ -1130,29 +1068,24 @@ end
 
 -- ═════════════════════════════════════════════════════════════════════════════
 -- SECTION 6.5 — MOBILE ACTION TABLE
--- Populated here so all tech functions are already defined above.
--- Keys match _mobileButtonDefs[i].label (unique per button).
+-- Populated here so all tech functions above are already in scope.
+-- Keys match _mobileBtnDefs[i].id (unique per button).
 -- ═════════════════════════════════════════════════════════════════════════════
 
 _mobileActions = {
-    -- Twisted Tech
     ["TW"]  = function(t) PerformTwistedTech(t) end,
 
-    -- Three Kyoto variants — each has a distinct label key
     ["KY1"] = function(t) PerformKyotoCombo(t, 1) end,
     ["KY2"] = function(t) PerformKyotoCombo(t, 2) end,
     ["KYG"] = function(t) PerformKyotoCombo(t, 3) end,
 
-    -- Grasp Tech (only fires if target is ragdolled — shows "GraspTech" toggle is ON)
     ["GR"]  = function(t) PerformGraspTech(t) end,
 
-    -- Uppercut Grasp
     ["UC"]  = function(t) PerformUppercutGrasp(t) end,
 
-    -- Lethal + Flowing burst
-    ["L+F"] = function(_) PerformLethalFlowing() end,
+    ["LF"]  = function(_) PerformLethalFlowing() end,
 
-    -- Loop Tech: toggle the loop on/off via the mobile button
+    -- Loop Tech button toggles the loop
     ["LP"]  = function(t)
         if _loopRunning then
             StopLoopTech()
@@ -1161,42 +1094,41 @@ _mobileActions = {
         end
     end,
 
-    -- Auto Block: re-trigger the block check immediately
-    ["BK"]  = function(_) end,   -- Auto Block is passive; button is informational
+    -- Auto Block is passive — button just serves as a visual reminder
+    ["BK"]  = function(_) end,
 
-    -- Auto Punish: manually trigger a punish burst
+    -- Manual punish burst (same logic as auto but triggered on demand)
     ["PF"]  = function(t)
         if not IsAlive() or not t then return end
         local myRoot = GetRoot()
         local tRoot  = GetPlayerRoot(t)
-        if myRoot and tRoot and Distance(myRoot.Position, tRoot.Position) <= 14 then
+        if not myRoot or not tRoot then return end
+        if Distance(myRoot.Position, tRoot.Position) <= Config.Settings.PunishHitRange then
             DoAction("M1")
             task.wait(Jitter(Config.Settings.M1Interval))
             DoAction("M1")
         end
     end,
 
-    -- Auto M1 side-dash: manually trigger side-dash M1 extension
+    -- Manual side-dash M1 burst
     ["SM"]  = function(t)
         if not IsAlive() or not t then return end
         local myRoot = GetRoot()
         local tRoot  = GetPlayerRoot(t)
-        if myRoot and tRoot then
-            myRoot.CFrame = CFrame.new(myRoot.Position,
-                Vector3.new(tRoot.Position.X, myRoot.Position.Y, tRoot.Position.Z))
-            DoAction("M1")
-            task.wait(Jitter(Config.Settings.M1Interval))
-            DoAction("M1")
-        end
+        if not myRoot or not tRoot then return end
+        myRoot.CFrame = CFrame.new(myRoot.Position,
+            Vector3.new(tRoot.Position.X, myRoot.Position.Y, tRoot.Position.Z))
+        DoAction("M1")
+        task.wait(Jitter(Config.Settings.M1Interval))
+        DoAction("M1")
     end,
 
-    -- Lock On 1: snap to closest enemy now
+    -- Lock On buttons: snap to target immediately
     ["L1"]  = function(_)
         local e = GetClosestEnemy()
         if e then State.LockTarget = e end
     end,
 
-    -- Lock On 2: snap to cursor-nearest enemy now
     ["L2"]  = function(_)
         local e = GetCursorEnemy()
         if e then State.LockTarget = e end
@@ -1247,7 +1179,6 @@ local function CheckAutoBlock()
             _blockCD = true
             DoAction("Block", true)
             State.IsBlocking = true
-
             task.spawn(function()
                 task.wait(Jitter(0.50))
                 DoAction("Block", false)
@@ -1285,10 +1216,8 @@ local function AutoM1AfterSideDash(target)
         local myRoot = GetRoot()
         local tRoot  = GetPlayerRoot(target)
         if myRoot and tRoot and Distance(myRoot.Position, tRoot.Position) <= Config.Settings.PunishHitRange then
-            myRoot.CFrame = CFrame.new(
-                myRoot.Position,
-                Vector3.new(tRoot.Position.X, myRoot.Position.Y, tRoot.Position.Z)
-            )
+            myRoot.CFrame = CFrame.new(myRoot.Position,
+                Vector3.new(tRoot.Position.X, myRoot.Position.Y, tRoot.Position.Z))
             DoAction("M1")
             task.wait(Jitter(Config.Settings.M1Interval))
             DoAction("M1")
@@ -1304,10 +1233,7 @@ local LockTarget1 = nil
 local LockTarget2 = nil
 
 local function UpdateLockOnClosest()
-    if not Config.Toggles.LockOnClosest then
-        LockTarget1 = nil
-        return
-    end
+    if not Config.Toggles.LockOnClosest then LockTarget1 = nil return end
     LockTarget1 = GetClosestEnemy()
     if not LockTarget1 then return end
     local tRoot = GetPlayerRoot(LockTarget1)
@@ -1317,10 +1243,7 @@ local function UpdateLockOnClosest()
 end
 
 local function UpdateLockOnCursor()
-    if not Config.Toggles.LockOnCursor then
-        LockTarget2 = nil
-        return
-    end
+    if not Config.Toggles.LockOnCursor then LockTarget2 = nil return end
     LockTarget2 = GetCursorEnemy()
     if not LockTarget2 then return end
     local tRoot = GetPlayerRoot(LockTarget2)
@@ -1356,30 +1279,30 @@ local function CreateESPFor(player)
     local root = char:FindFirstChild("HumanoidRootPart")
     if not root then return end
 
-    local box                   = Instance.new("SelectionBox")
-    box.SurfaceTransparency     = Config.Settings.ESPTransparency
-    box.SurfaceColor3           = Config.Settings.ESPColor
-    box.LineThickness           = 0.04
-    box.Color3                  = Config.Settings.ESPColor
-    box.Adornee                 = char
-    box.Parent                  = CoreGui
+    local box               = Instance.new("SelectionBox")
+    box.SurfaceTransparency = Config.Settings.ESPTransparency
+    box.SurfaceColor3       = Config.Settings.ESPColor
+    box.LineThickness       = 0.04
+    box.Color3              = Config.Settings.ESPColor
+    box.Adornee             = char
+    box.Parent              = CoreGui
 
-    local bb                    = Instance.new("BillboardGui")
-    bb.Adornee                  = root
-    bb.AlwaysOnTop              = true
-    bb.Size                     = UDim2.new(0, 90, 0, 22)
-    bb.StudsOffset              = Vector3.new(0, 3.2, 0)
-    bb.Parent                   = CoreGui
+    local bb                = Instance.new("BillboardGui")
+    bb.Adornee              = root
+    bb.AlwaysOnTop          = true
+    bb.Size                 = UDim2.new(0, 90, 0, 22)
+    bb.StudsOffset          = Vector3.new(0, 3.2, 0)
+    bb.Parent               = CoreGui
 
-    local name_lbl              = Instance.new("TextLabel")
-    name_lbl.Text               = player.Name
-    name_lbl.Size               = UDim2.new(1, 0, 1, 0)
-    name_lbl.BackgroundTransparency = 1
-    name_lbl.TextColor3         = Config.Settings.ESPColor
-    name_lbl.TextSize           = 13
-    name_lbl.Font               = Enum.Font.GothamBold
-    name_lbl.TextStrokeTransparency = 0.4
-    name_lbl.Parent             = bb
+    local nlbl              = Instance.new("TextLabel")
+    nlbl.Text               = player.Name
+    nlbl.Size               = UDim2.new(1, 0, 1, 0)
+    nlbl.BackgroundTransparency = 1
+    nlbl.TextColor3         = Config.Settings.ESPColor
+    nlbl.TextSize           = 13
+    nlbl.Font               = Enum.Font.GothamBold
+    nlbl.TextStrokeTransparency = 0.4
+    nlbl.Parent             = bb
 
     _espObjects[player] = {box, bb}
 end
@@ -1414,7 +1337,6 @@ Connect(UserInputService.InputBegan, function(inp, gameProc)
                 if upd then upd() end
                 Notify("TSB Script",
                     name .. " → " .. (Config.Toggles[name] and "ON" or "OFF"))
-
                 if _mobileBarRefresh then _mobileBarRefresh(name) end
 
                 if name == "LoopTech" then
@@ -1429,12 +1351,11 @@ Connect(UserInputService.InputBegan, function(inp, gameProc)
         end
     end
 
-    -- GUI visibility
     if inp.KeyCode == Config.Keybinds.ToggleGUI then
         MainFrame.Visible = not MainFrame.Visible
     end
 
-    -- Kyoto burst keys
+    -- Keyboard burst keys
     local target = GetLockTarget()
     if Config.Toggles.KyotoCombo then
         if inp.KeyCode == Enum.KeyCode.Q then
@@ -1464,17 +1385,14 @@ local _hbFrame = 0
 Connect(RunService.Heartbeat, function()
     _hbFrame = _hbFrame + 1
 
-    -- Every frame: Auto Block
     if Config.Toggles.AutoBlock then CheckAutoBlock() end
 
-    -- Every 2 frames: Lock On
     if _hbFrame % 2 == 0 then
         UpdateLockOnClosest()
         UpdateLockOnCursor()
         State.LockTarget = GetLockTarget()
     end
 
-    -- Every 3 frames: M1 combo state machine
     if _hbFrame % 3 == 0 then
         if tick() - State.LastM1Time > 3.0 then State.M1Count = 0 end
 
@@ -1496,7 +1414,6 @@ Connect(RunService.Heartbeat, function()
         end
     end
 
-    -- Every 4 frames: Dash detection
     if _hbFrame % 4 == 0 then
         local now    = tick()
         local target = State.LockTarget
@@ -1520,26 +1437,24 @@ Connect(RunService.Heartbeat, function()
         State.IsRagdolled = IsRagdolled()
     end
 
-    -- Every 12 frames: ESP
     if _hbFrame % 12 == 0 then UpdateESP() end
 
-    -- Every 30 frames: status bar + Loop Tech keep-alive
     if _hbFrame % 30 == 0 then
         local T = Config.Toggles
         local on = {}
-        if T.TwistedTech        then on[#on+1] = "Twisted"  end
-        if T.KyotoCombo         then on[#on+1] = "Kyoto"    end
-        if T.GraspTech          then on[#on+1] = "Grasp"    end
-        if T.UppercutGrasp      then on[#on+1] = "Upcut"    end
-        if T.LethalFlowing      then on[#on+1] = "L+F"      end
-        if T.LoopTech           then on[#on+1] = "Loop"     end
-        if T.AutoBlock          then on[#on+1] = "Block"    end
-        if T.AutoPunishFrontDash then on[#on+1] = "Punish"  end
-        if T.AutoM1SideDash     then on[#on+1] = "SideM1"  end
-        if T.LockOnClosest      then on[#on+1] = "Lock1"   end
-        if T.LockOnCursor       then on[#on+1] = "Lock2"   end
-        if T.ESP                then on[#on+1] = "ESP"      end
-        if T.MobileMode         then on[#on+1] = "📱"        end
+        if T.TwistedTech         then on[#on+1] = "Twisted"  end
+        if T.KyotoCombo          then on[#on+1] = "Kyoto"    end
+        if T.GraspTech           then on[#on+1] = "Grasp"    end
+        if T.UppercutGrasp       then on[#on+1] = "Upcut"    end
+        if T.LethalFlowing       then on[#on+1] = "L+F"      end
+        if T.LoopTech            then on[#on+1] = "Loop"     end
+        if T.AutoBlock           then on[#on+1] = "Block"    end
+        if T.AutoPunishFrontDash then on[#on+1] = "Punish"   end
+        if T.AutoM1SideDash      then on[#on+1] = "SideM1"   end
+        if T.LockOnClosest       then on[#on+1] = "Lock1"    end
+        if T.LockOnCursor        then on[#on+1] = "Lock2"    end
+        if T.ESP                 then on[#on+1] = "ESP"       end
+        if T.MobileMode          then on[#on+1] = "📱"         end
 
         if #on == 0 then
             StatusLabel.Text       = "  Status: Idle (all off)"
@@ -1550,7 +1465,6 @@ Connect(RunService.Heartbeat, function()
         end
     end
 
-    -- Loop Tech auto-restart
     if Config.Toggles.LoopTech and not _loopRunning then
         local t = GetLockTarget()
         if t then StartLoopTech(t) end
@@ -1578,7 +1492,6 @@ local function OnCharacterAdded(char)
 end
 
 Connect(LocalPlayer.CharacterAdded, OnCharacterAdded)
-
 if LocalPlayer.Character then
     task.spawn(function() OnCharacterAdded(LocalPlayer.Character) end)
 end
@@ -1596,13 +1509,15 @@ task.delay(2, function()
     for _, name in ipairs(known) do FindRemote(name) end
 end)
 
--- Perform an initial mobile bar state sync in case toggles were pre-set
+-- Sync mobile bar to initial toggle states
 task.defer(function() RefreshMobileBar("init") end)
 
 Notify(
-    "TSB Ultimate v2.1 Loaded",
-    "RCtrl=GUI | F1–F12=Features | 📱=Mobile Mode | Q/E/R/G/T=Bursts",
+    "TSB Ultimate v2.2 Loaded",
+    "RCtrl=GUI | F1-F12=Features | Enable Mobile Mode in 📱 tab | Q/E/R/G/T=Bursts",
     8
 )
 
-print("[TSB Ultimate v2.1] Initialized — " .. (_IsMobile and "MOBILE" or "DESKTOP") .. " layout active.")
+print("[TSB Ultimate v2.2] Initialized — "
+    .. (_IsMobile and "MOBILE" or "DESKTOP")
+    .. " layout  |  IgnoreGuiInset active")
